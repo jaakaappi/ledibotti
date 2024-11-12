@@ -8,12 +8,13 @@ from rgbmatrix import RGBMatrix, RGBMatrixOptions
 def show_image(image):
     # Configuration for the matrix
     options = RGBMatrixOptions()
-    options.rows = 64
+    options.rows = 32
     options.cols = 64
-    options.chain_length = 1
+    options.chain_length = 2
     options.parallel = 1
-    # If you have an Adafruit HAT: 'adafruit-hat'
     options.hardware_mapping = 'adafruit-hat'
+    options.gpio_slowdown = 4
+    options.pixel_mapper_config = "U-mapper"
 
     matrix = RGBMatrix(options=options)
 
