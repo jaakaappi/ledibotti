@@ -1,5 +1,6 @@
 import logging
 import os
+import io
 
 from PIL import Image
 from dotenv import load_dotenv
@@ -7,21 +8,22 @@ from dotenv import load_dotenv
 # from lottie.importers.core import import_tgs
 from telegram import Update, Message
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, CallbackContext, CommandHandler
-# from multiprocessing import Process
+from multiprocessing import Process
 
-# from showimage import show_image
+from showimage import show_image
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
 required_env_vars = [
     "TELEGRAM_TOKEN",
 ]
-# matrix_process: Process = None
+matrix_process: Process = None
 
 for env_var in required_env_vars:
     if env_var not in os.environ or os.environ[env_var] == "":
@@ -44,11 +46,28 @@ for env_var in required_env_vars:
 async def handle_image(update: Update, context: CallbackContext):
     print(update.message)
 
+    if update.message.document.file_size > 1000000000:
+        logger.error(f"Too big file: {update.message.document.file_name} {update.message.document.file_size/1000}MB")
+
     # file_type = get_image_file_type(update.message)
     # print(file_type)
 
     # new_file = await update.message.effective_attachment[-1].get_file()
-    path = await (await update.message.document.get_file()).download_to_drive()
+
+    with io.BytesIO() as out:
+        await (await update.message.document.get_file()).download_to_memory(out)
+        out.seek(0)
+
+        with Image.open(out) as image:
+            image.thumbnail((64, 64))
+            image = image.convert('RGB')
+
+            global matrix_process
+            if matrix_process is not None:
+                matrix_process.kill()
+            matrix_process = Process(target=show_image, args=(image, ))
+            matrix_process.start()
+
     # if file_type == "photo" else await update.message.effective_attachment.get_file()
     # path = new_file.download()
 
@@ -63,17 +82,17 @@ async def handle_image(update: Update, context: CallbackContext):
     #         export_gif(lottie_object, path)
 
     # else:
-    with Image.open(path) as im:
-        print(path)
-        im.thumbnail((64, 64))
-        im = im.convert('RGB')
-            # im.save(path)
+    # with io.BytesIO() as out:
+    #     print(path)
+    #     im.thumbnail((64, 64))
+    #     im = im.convert('RGB')
+    #         # im.save(path)
 
-            # global matrix_process
-            # if matrix_process is not None:
-            #     matrix_process.kill()
-            # matrix_process = Process(target=show_image, args=(im, ))
-            # matrix_process.start()
+    #     global matrix_process
+    #     if matrix_process is not None:
+    #         matrix_process.kill()
+    #     matrix_process = Process(target=show_image, args=(im, ))
+    #     matrix_process.start()
             # todo send to matrix
 
 
