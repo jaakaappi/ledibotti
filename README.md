@@ -1,5 +1,13 @@
 # ledibotti
 
+## Hardware
+* 2x [Adafruit 64x32 RGB LED Matrix - 5mm pitch](https://www.printables.com/model/1095162-64x64-p5-rgb-led-matrix-frame-and-feet-with-rasper)
+* [Adafruit RGB Matrix HAT + RTC for Raspberry Pi - Mini Kit](https://www.adafruit.com/product/2345)
+* At least one, preferably two [GPIO Ribbon Cable 2x8 IDC Cable - 16 pins 12" long](https://www.adafruit.com/product/4170)
+* 3D-printed frame, files available [here](https://www.printables.com/model/1095162-64x64-p5-rgb-led-matrix-frame-and-feet-with-rasper)
+
+## Dev notes
+
 No special venv due to how the rgbmatrix library is installed
 
 ```
