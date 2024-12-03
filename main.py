@@ -18,6 +18,7 @@ from telegram.ext import (
     filters,
     CallbackContext,
     CommandHandler,
+    ContextTypes,
 )
 from multiprocessing import Process
 
@@ -31,28 +32,16 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 required_env_vars = ["TELEGRAM_TOKEN", "ADMIN_USER_IDS"]
-matrix_process: Process = None
 
 for env_var in required_env_vars:
     if env_var not in os.environ or os.environ[env_var] == "":
         raise Exception(f"Missing env var {env_var}")
 
 admins = os.environ.get("ADMIN_USER_IDS").split(",")
-
 logger.info("Active admins: " + (",".join(admins)))
 
-
-# def get_image_file_type(message: Message):
-#     # todo handle photos, stickers
-#     if message.animation is not None:
-#         print("animation")
-#         return message.animation.file_id
-#     elif len(message.photo) > 0:
-#         print("photo")
-#         return message.photo[-1].file_id
-#     if hasattr(message, "sticker"):
-#         print("sticker")
-#         return message.sticker.file_id
+matrix_process: Process = None
+message_queue = []
 
 
 def get_message_type(message):
@@ -66,38 +55,40 @@ def get_message_type(message):
             return "attachment_image"
 
 
-async def handle_image(update: Update, context: CallbackContext):
+async def process_image(message):
+    global matrix_process
+
+    with io.BytesIO() as out:
+        await (await message.document.get_file()).download_to_memory(out)
+        out.seek(0)
+
+        with Image.open(out) as image:
+            image.thumbnail((64, 64))
+            image = image.convert("RGB")
+
+            if matrix_process is not None:
+                matrix_process.kill()
+            matrix_process = Process(target=show_image, args=(image,))
+            matrix_process.start()
+
+
+async def handle_image_message(update: Update, context: CallbackContext):
     print(update.message)
 
     message_type = get_message_type(update.message)
-    print(message_type)
+    print(f"Message type {message_type}")
 
-    global matrix_process
+    global matrix_process, message_queue
+
+    # message_queue.append(update.message)
+    # logger.info(message_queue)
 
     if message_type == "attachment_image":
-        if update.message.document and update.message.document.file_size > 1000000000:
-            logger.error(
-                f"Too big file: {update.message.document.file_name} {update.message.document.file_size/1000}MB"
-            )
+        message_queue.append(
+            {"message_type": "attachment_image", "message": update.message}
+        )
 
-        with io.BytesIO() as out:
-            await (await update.message.document.get_file()).download_to_memory(out)
-            out.seek(0)
-
-            with Image.open(out) as image:
-                image.thumbnail((64, 64))
-                image = image.convert("RGB")
-
-                if matrix_process is not None:
-                    matrix_process.kill()
-                matrix_process = Process(target=show_image, args=(image,))
-                matrix_process.start()
-
-    if message_type == "attachment_video":
-        if update.message.document and update.message.document.file_size > 1000000000:
-            logger.error(
-                f"Too big file: {update.message.document.file_name} {update.message.document.file_size/1000}MB"
-            )
+    elif message_type == "attachment_video":
 
         with io.BytesIO() as out:
             await (await update.message.document.get_file()).download_to_memory(out)
@@ -138,6 +129,12 @@ async def handle_image(update: Update, context: CallbackContext):
                     matrix_process.kill()
                 matrix_process = Process(target=show_mp4, args=(frames,))
                 matrix_process.start()
+
+    else:
+        logger.warning("Unhandled message type")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id, text="Sori ei pysty"
+        )
 
     # if file_type == "photo" else await update.message.effective_attachment.get_file()
     # path = new_file.download()
@@ -203,6 +200,21 @@ async def handle_queue(update: Update, context: CallbackContext):
     ]
 
 
+async def check_next_image(context: ContextTypes.DEFAULT_TYPE) -> None:
+    logging.info("Checking next image")
+
+    global message_queue
+
+    if len(message_queue) == 0:
+        logging.info("No messages")
+    else:
+        message = message_queue.pop(0)
+        logging.info(f"Processing next message {message}")
+
+        if message["message_type"] == "attachment_image":
+            await process_image(message["message"])
+
+
 if __name__ == "__main__":
     application = ApplicationBuilder().token(os.environ.get("TELEGRAM_TOKEN")).build()
 
@@ -210,10 +222,12 @@ if __name__ == "__main__":
     #     'start', handle_start, filters.ChatType.PRIVATE & filters.TEXT)
 
     application.add_handler(
-        MessageHandler(filters.ChatType.PRIVATE & (~filters.TEXT), handle_image)
+        MessageHandler(filters.ChatType.PRIVATE & (~filters.TEXT), handle_image_message)
     )
     application.add_handler(CommandHandler("skip", handle_skip))
     application.add_handler(CommandHandler("queue", handle_skip))
+
+    application.job_queue.run_repeating(check_next_image, 15)
 
     try:
         application.run_polling()
@@ -221,4 +235,5 @@ if __name__ == "__main__":
         logging.error(e)
         logging.error(traceback.format_exc())
     finally:
-        matrix_process.kill()
+        if matrix_process:
+            matrix_process.kill()

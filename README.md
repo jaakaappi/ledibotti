@@ -11,7 +11,7 @@
 No special venv due to how the rgbmatrix library is installed
 
 ```
-sudo -H pip install python-telegram-bot --break-system-packages
+sudo -H pip install python-telegram-bot[job-queue] --break-system-packages
 sudo -H pip install opencv-contrib-python-headless --break-system-packages -v
 sudo -H pip install ffmpeg-python --break-system-packages
 

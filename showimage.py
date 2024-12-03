@@ -15,7 +15,7 @@ def show_image(image):
     options.parallel = 1
     options.hardware_mapping = "adafruit-hat"
     options.gpio_slowdown = 4
-    options.pixel_mapper_config = "U-mapper"
+    options.pixel_mapper_config = "U-mapper;Rotate:180"
 
     matrix = RGBMatrix(options=options)
 
