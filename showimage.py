@@ -6,21 +6,24 @@ from PIL import ImageDraw
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
 
 
-def show_image(image):
-    # Configuration for the matrix
-    options = RGBMatrixOptions()
-    options.rows = 32
-    options.cols = 64
-    options.chain_length = 2
-    options.parallel = 1
-    options.hardware_mapping = "adafruit-hat"
-    options.gpio_slowdown = 4
-    options.pixel_mapper_config = "U-mapper;Rotate:180"
+# Configuration for the matrix
+options = RGBMatrixOptions()
+options.rows = 32
+options.cols = 64
+options.chain_length = 2
+options.parallel = 1
+options.hardware_mapping = "adafruit-hat"
+options.gpio_slowdown = 4
+options.pixel_mapper_config = "U-mapper;Rotate:180"
 
+
+def show_image(image):
     matrix = RGBMatrix(options=options)
 
     matrix.Clear()
-    matrix.SetImage(image, 0, 0)
+    padding_x = int((64 - image.width) / 2)
+    padding_y = int((64 - image.height) / 2)
+    matrix.SetImage(image, padding_x, padding_y)
 
     try:
         while True:
@@ -31,16 +34,6 @@ def show_image(image):
 
 def show_mp4(frames):
     print("Got " + str(len(frames)) + " frames")
-    # Configuration for the matrix
-    options = RGBMatrixOptions()
-    options.rows = 32
-    options.cols = 64
-    options.chain_length = 2
-    options.parallel = 1
-    options.hardware_mapping = "adafruit-hat"
-    options.gpio_slowdown = 4
-    options.pixel_mapper_config = "U-mapper"
-
     matrix = RGBMatrix(options=options)
 
     # Preprocess the gifs frames into canvases to improve playback performance
@@ -50,7 +43,9 @@ def show_mp4(frames):
     )
     for frame in frames:
         canvas = matrix.CreateFrameCanvas()
-        canvas.SetImage(frame)
+        padding_x = int((64 - frame.width) / 2)
+        padding_y = int((64 - frame.height) / 2)
+        canvas.SetImage(frame, padding_x, padding_y)
         canvases.append(canvas)
 
     print("Completed Preprocessing, displaying gif")

@@ -19,6 +19,7 @@ from telegram.ext import (
     CallbackContext,
     CommandHandler,
     ContextTypes,
+    Job,
 )
 from multiprocessing import Process
 
@@ -41,7 +42,9 @@ admins = os.environ.get("ADMIN_USER_IDS").split(",")
 logger.info("Active admins: " + (",".join(admins)))
 
 matrix_process: Process = None
+scheduler_job: Job = None
 message_queue = []
+was_empty_queue = False
 
 
 def get_message_type(message):
@@ -55,7 +58,7 @@ def get_message_type(message):
             return "attachment_image"
 
 
-async def process_image(message):
+async def process_attachment_image(message):
     global matrix_process
 
     with io.BytesIO() as out:
@@ -72,13 +75,57 @@ async def process_image(message):
             matrix_process.start()
 
 
+async def process_attachment_video(message):
+    global matrix_process
+
+    with io.BytesIO() as out:
+        await (await message.document.get_file()).download_to_memory(out)
+        out.seek(0)
+
+        with tempfile.NamedTemporaryFile() as tempf, tempfile.NamedTemporaryFile() as tempf2:
+            tempf.write(out.read())
+
+            capture = cv2.VideoCapture(tempf.name)
+            width = capture.get(3)
+            height = capture.get(4)
+            capture.release()
+            resized = False
+            if width % 2 != 0 or height % 2 != 0:
+                ffmpeg.input(tempf.name).filter(
+                    "scale",
+                    width - 1 if width % 2 != 0 else width,
+                    height - 1 if height % 2 != 0 else height,
+                ).output(tempf2.name, format="mp4").overwrite_output().run()
+                resized = True
+
+            capture = cv2.VideoCapture(tempf.name if not resized else tempf2.name)
+            frames = []
+
+            while capture.isOpened():
+                return_value, image = capture.read()
+                if return_value:
+                    converted = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                    pil_image = Image.fromarray(converted)
+                    pil_image.thumbnail((64, 64), Image.Resampling.LANCZOS)
+                    frames.append(pil_image.convert("RGB"))
+                elif not return_value:
+                    break
+
+            capture.release()
+
+            if matrix_process is not None:
+                matrix_process.kill()
+            matrix_process = Process(target=show_mp4, args=(frames,))
+            matrix_process.start()
+
+
 async def handle_image_message(update: Update, context: CallbackContext):
     print(update.message)
 
     message_type = get_message_type(update.message)
-    print(f"Message type {message_type}")
+    logger.info(f"Message type {message_type}")
 
-    global matrix_process, message_queue
+    global matrix_process, message_queue, was_empty_queue
 
     # message_queue.append(update.message)
     # logger.info(message_queue)
@@ -87,48 +134,23 @@ async def handle_image_message(update: Update, context: CallbackContext):
         message_queue.append(
             {"message_type": "attachment_image", "message": update.message}
         )
+        if len(message_queue) == 1 and not was_empty_queue:
+            await scheduler_job.run(application)
+            logger.info("Queue empty, displaying immediately")
+            was_empty_queue = True
+        else:
+            was_empty_queue = False
 
     elif message_type == "attachment_video":
-
-        with io.BytesIO() as out:
-            await (await update.message.document.get_file()).download_to_memory(out)
-            out.seek(0)
-
-            with tempfile.NamedTemporaryFile() as tempf, tempfile.NamedTemporaryFile() as tempf2:
-                tempf.write(out.read())
-
-                capture = cv2.VideoCapture(tempf.name)
-                width = capture.get(3)
-                height = capture.get(4)
-                capture.release()
-                resized = False
-                if width % 2 != 0 or height % 2 != 0:
-                    ffmpeg.input(tempf.name).filter(
-                        "scale",
-                        width - 1 if width % 2 != 0 else width,
-                        height - 1 if height % 2 != 0 else height,
-                    ).output(tempf2.name, format="mp4").overwrite_output().run()
-                    resized = True
-
-                capture = cv2.VideoCapture(tempf.name if not resized else tempf2.name)
-                frames = []
-
-                while capture.isOpened():
-                    return_value, image = capture.read()
-                    if return_value:
-                        converted = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                        pil_image = Image.fromarray(converted)
-                        pil_image.thumbnail((64, 64), Image.Resampling.LANCZOS)
-                        frames.append(pil_image.convert("RGB"))
-                    elif not return_value:
-                        break
-
-                capture.release()
-
-                if matrix_process is not None:
-                    matrix_process.kill()
-                matrix_process = Process(target=show_mp4, args=(frames,))
-                matrix_process.start()
+        message_queue.append(
+            {"message_type": "attachment_video", "message": update.message}
+        )
+        if len(message_queue) == 1 and not was_empty_queue:
+            await scheduler_job.run(application)
+            logger.info("Queue empty, displaying immediately")
+            was_empty_queue = True
+        else:
+            was_empty_queue = False
 
     else:
         logger.warning("Unhandled message type")
@@ -208,11 +230,16 @@ async def check_next_image(context: ContextTypes.DEFAULT_TYPE) -> None:
     if len(message_queue) == 0:
         logging.info("No messages")
     else:
-        message = message_queue.pop(0)
+        message = message_queue[0]
         logging.info(f"Processing next message {message}")
 
         if message["message_type"] == "attachment_image":
-            await process_image(message["message"])
+            await process_attachment_image(message["message"])
+
+        if message["message_type"] == "attachment_video":
+            await process_attachment_video(message["message"])
+
+        message_queue.pop(0)
 
 
 if __name__ == "__main__":
@@ -227,7 +254,7 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("skip", handle_skip))
     application.add_handler(CommandHandler("queue", handle_skip))
 
-    application.job_queue.run_repeating(check_next_image, 15)
+    scheduler_job = application.job_queue.run_repeating(check_next_image, 15)
 
     try:
         application.run_polling()

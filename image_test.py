@@ -14,6 +14,6 @@ else:
 image = Image.open(image_file)
 
 # Make image fit our screen.
-image.thumbnail((64,64), Image.ANTIALIAS)
+image.thumbnail((64, 64), Image.ANTIALIAS)
 
-show_image(image.convert('RGB'))
+show_image(image.convert("RGB"))
