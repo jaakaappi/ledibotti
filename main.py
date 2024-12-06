@@ -7,11 +7,10 @@ import traceback
 import cv2
 import ffmpeg
 from PIL import Image
+from pillow_heif import HeifImagePlugin
 from dotenv import load_dotenv
 
-# from lottie.exporters.gif import export_gif
-# from lottie.importers.core import import_tgs
-from telegram import Update, Message
+from telegram import Update, Message, File
 from telegram.ext import (
     ApplicationBuilder,
     MessageHandler,
@@ -47,42 +46,41 @@ message_queue = []
 was_empty_queue = False
 
 
-def get_message_type(message):
+def get_message_type(message: Message):
     if message.document and message.document.mime_type:
         if message.document.mime_type == "video/mp4":
             return "attachment_video"
-        elif (
-            "image" in message.document.mime_type
-            and "heic" not in message.document.mime_type
-        ):
+        elif "image" in message.document.mime_type:
             return "attachment_image"
+    elif message.photo:
+        return "photo"
+    elif message.video:
+        return "video"
+    elif message.sticker:
+        if message.sticker.is_animated:
+            return "sticker_animation"
+        if message.sticker.is_video:
+            return "sticker_video"
+        else:
+            return "sticker_static"
 
 
-async def process_attachment_image(message):
+#
+#   Functions for sending stuff to the matrix
+#
+
+
+async def display_video(file: File):
     global matrix_process
 
     with io.BytesIO() as out:
-        await (await message.document.get_file()).download_to_memory(out)
+        await file.download_to_memory(out)
         out.seek(0)
 
-        with Image.open(out) as image:
-            image.thumbnail((64, 64))
-            image = image.convert("RGB")
-
-            if matrix_process is not None:
-                matrix_process.kill()
-            matrix_process = Process(target=show_image, args=(image,))
-            matrix_process.start()
-
-
-async def process_attachment_video(message):
-    global matrix_process
-
-    with io.BytesIO() as out:
-        await (await message.document.get_file()).download_to_memory(out)
-        out.seek(0)
-
-        with tempfile.NamedTemporaryFile() as tempf, tempfile.NamedTemporaryFile() as tempf2:
+        with (
+            tempfile.NamedTemporaryFile() as tempf,
+            tempfile.NamedTemporaryFile() as tempf2,
+        ):
             tempf.write(out.read())
 
             capture = cv2.VideoCapture(tempf.name)
@@ -119,7 +117,58 @@ async def process_attachment_video(message):
             matrix_process.start()
 
 
-async def handle_image_message(update: Update, context: CallbackContext):
+async def display_image(file: File):
+    global matrix_process
+
+    with io.BytesIO() as out:
+        await file.download_to_memory(out)
+        out.seek(0)
+
+        with Image.open(out) as image:
+            image.thumbnail((64, 64))
+            image = image.convert("RGB")
+
+            if matrix_process is not None:
+                matrix_process.kill()
+            matrix_process = Process(target=show_image, args=(image,))
+            matrix_process.start()
+
+
+#
+#   Functions for digging out bits to display from messages
+#
+
+
+async def process_attachment_image(message: Message):
+    await display_image(await message.document.get_file())
+
+
+async def process_photo(message: Message):
+    await display_image(await message.effective_attachment[-1].get_file())
+
+
+async def process_video(message: Message):
+    await display_video(await message.video.get_file())
+
+
+async def process_attachment_video(message: Message):
+    await display_video(await message.document.get_file())
+
+
+async def process_static_sticker(message: Message):
+    await display_image(await message.sticker.get_file())
+
+
+async def process_animated_or_video_sticker(message: Message):
+    await display_video(await message.sticker.get_file())
+
+
+#
+#   Telegram message handlers
+#
+
+
+async def handle_message(update: Update, context: CallbackContext):
     print(update.message)
 
     message_type = get_message_type(update.message)
@@ -127,24 +176,8 @@ async def handle_image_message(update: Update, context: CallbackContext):
 
     global matrix_process, message_queue, was_empty_queue
 
-    # message_queue.append(update.message)
-    # logger.info(message_queue)
-
-    if message_type == "attachment_image":
-        message_queue.append(
-            {"message_type": "attachment_image", "message": update.message}
-        )
-        if len(message_queue) == 1 and not was_empty_queue:
-            await scheduler_job.run(application)
-            logger.info("Queue empty, displaying immediately")
-            was_empty_queue = True
-        else:
-            was_empty_queue = False
-
-    elif message_type == "attachment_video":
-        message_queue.append(
-            {"message_type": "attachment_video", "message": update.message}
-        )
+    if message_type:
+        message_queue.append({"message_type": message_type, "message": update.message})
         if len(message_queue) == 1 and not was_empty_queue:
             await scheduler_job.run(application)
             logger.info("Queue empty, displaying immediately")
@@ -157,41 +190,6 @@ async def handle_image_message(update: Update, context: CallbackContext):
         await context.bot.send_message(
             chat_id=update.effective_chat.id, text="Sori ei pysty"
         )
-
-    # if file_type == "photo" else await update.message.effective_attachment.get_file()
-    # path = new_file.download()
-
-    # file_extension = os.path.splitext(path)[-1]
-    # print(file_extension)
-
-    # if file_extension == ".mp4":
-    #     pass
-    # elif file_extension == ".tgs":
-    #     with open(path) as f:
-    #         lottie_object = import_tgs(f)
-    #         export_gif(lottie_object, path)
-
-    # else:
-    # with io.BytesIO() as out:
-    #     print(path)
-    #     im.thumbnail((64, 64))
-    #     im = im.convert('RGB')
-    #         # im.save(path)
-
-    #     global matrix_process
-    #     if matrix_process is not None:
-    #         matrix_process.kill()
-    #     matrix_process = Process(target=show_image, args=(im, ))
-    #     matrix_process.start()
-    # todo send to matrix
-
-
-# async def handle_start(update: Update, context: CallbackContext):
-#     await context.bot.send_message(update.message.chat_id,
-#                                    "Welcome! This is the LED matrix bot ✨🤖"
-#                                    "You can send me images to show on my bright and colorful 64x64 pixel screen! "
-#                                    "Larger images will be scaled down until they fit. "
-#                                    "I also support GIFs and videos!")
 
 
 async def handle_skip(update: Update, context: CallbackContext):
@@ -233,11 +231,19 @@ async def check_next_image(context: ContextTypes.DEFAULT_TYPE) -> None:
         message = message_queue[0]
         logging.info(f"Processing next message {message}")
 
-        if message["message_type"] == "attachment_image":
-            await process_attachment_image(message["message"])
-
-        if message["message_type"] == "attachment_video":
-            await process_attachment_video(message["message"])
+        match message["message_type"]:
+            case "attachment_image":
+                await process_attachment_image(message["message"])
+            case "attachment_video":
+                await process_attachment_video(message["message"])
+            case "photo":
+                await process_photo(message["message"])
+            case "video":
+                await process_video(message["message"])
+            case "sticker_animation" | "sticker_video":
+                await process_animated_or_video_sticker(message["message"])
+            case "sticker_static":
+                await process_static_sticker(message["message"])
 
         message_queue.pop(0)
 
@@ -245,11 +251,8 @@ async def check_next_image(context: ContextTypes.DEFAULT_TYPE) -> None:
 if __name__ == "__main__":
     application = ApplicationBuilder().token(os.environ.get("TELEGRAM_TOKEN")).build()
 
-    # start_handler = CommandHandler(
-    #     'start', handle_start, filters.ChatType.PRIVATE & filters.TEXT)
-
     application.add_handler(
-        MessageHandler(filters.ChatType.PRIVATE & (~filters.TEXT), handle_image_message)
+        MessageHandler(filters.ChatType.PRIVATE & (~filters.TEXT), handle_message)
     )
     application.add_handler(CommandHandler("skip", handle_skip))
     application.add_handler(CommandHandler("queue", handle_skip))

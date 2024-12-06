@@ -14,6 +14,9 @@ No special venv due to how the rgbmatrix library is installed
 sudo -H pip install python-telegram-bot[job-queue] --break-system-packages
 sudo -H pip install opencv-contrib-python-headless --break-system-packages -v
 sudo -H pip install ffmpeg-python --break-system-packages
+sudo apt-get install libheif-dev
+# Raspbian libheif was something like 1.15.1
+sudo -H pip install pillow-heif==0.10.1 --break-system-packages
 
 sudo python image_test.py iu.png
 
@@ -29,3 +32,6 @@ ffmpeg -i yeet.mp4 -vf "scale=50:88" -c:v libx264 -crf 23 -preset fast -c:a aac 
 # then re-encode it just to make sure
 ffmpeg -i input.mp4 -vf "scale=50:88" -c:v libx264 -crf 23 -preset fast -c:a aac output.mp4
 ```
+
+IF `.heic` files give problems, install libheif deps from (here)[https://www.thedigitalpictureframe.com/the-heic-photo-format-now-works-with-the-pi3d-digital-picture-frame-image-viewer/
+]
