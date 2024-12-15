@@ -1,7 +1,11 @@
 import sys
 import time
+import logging
 
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
+
+
+logger = logging.getLogger(__name__)
 
 
 # Configuration for the matrix
@@ -31,12 +35,12 @@ def show_image(image):
 
 
 def show_mp4(frames):
-    print("Got " + str(len(frames)) + " frames")
+    logger.info("Got " + str(len(frames)) + " frames")
     matrix = RGBMatrix(options=options)
 
     # Preprocess the gifs frames into canvases to improve playback performance
     canvases = []
-    print(
+    logger.info(
         "Preprocessing gif, this may take a moment depending on the size of the gif..."
     )
     for frame in frames:
@@ -46,11 +50,9 @@ def show_mp4(frames):
         canvas.SetImage(frame, padding_x, padding_y)
         canvases.append(canvas)
 
-    print("Completed Preprocessing, displaying gif")
+    logger.info("Completed Preprocessing, displaying gif")
 
     try:
-        print("Press CTRL-C to stop.")
-
         # Infinitely loop through the gif
         cur_frame = 0
         while True:
