@@ -1,0 +1,12 @@
+[Unit]
+Description=ledibotti
+After=network.target
+
+[Service]
+Type=idle
+Restart=on-failure
+User=root
+ExecStart=/bin/bash -c 'cd /home/pi/ledibotti/ && python main.py'
+
+[Install]
+WantedBy=multi-user.target

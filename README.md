@@ -41,3 +41,14 @@ ffmpeg -i input.mp4 -vf "scale=50:88" -c:v libx264 -crf 23 -preset fast -c:a aac
 ```
 
 IF `.heic` files give problems, install libheif deps from (here)[https://www.thedigitalpictureframe.com/the-heic-photo-format-now-works-with-the-pi3d-digital-picture-frame-image-viewer/]
+
+Daemon service spec in `ledibotti.service`
+* Write file with `sudo nano /lib/systemd/system/ledibotti.service`
+* `sudo chmod 644 /lib/systemd/system/ledibotti.service`
+* `sudo systemctl daemon-reload`
+* `sudo systemctl enable ledibotti.service`
+* Start `sudo systemctl start ledibotti.service`
+* Stop `sudo systemctl stop ledibotti.service`
+* Reload `sudo systemctl restart ledibotti.service`
+* Tail logs `sudo journalctl -u ledibotti.service`
+
